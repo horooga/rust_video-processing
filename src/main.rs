@@ -20,7 +20,7 @@ fn main() {
     - dither-ordered [koefficient(0-256)]: ordered dithering of frames with ./palette.txt and 16x16 Bayer matrix
     - posterize [koefficient]: posterize the image
     - quadrate [koefficient]: quadrate the dimensions of the album oriented frames (keep middle (n*k) x (n*k) square from n x m rectangle)
-    - psychodelize [koefficient]: psychodelize the image");
+    - psychodelize [hue_shift] [amplitude] [frequency] [hue_shift_speed] [amplitude_speed] [frequency_speed]: psychodelize the image");
         std::process::exit(1);
     }
     if args[1] == "get-palette" {
@@ -42,41 +42,51 @@ fn main() {
     } else if args[1] == "dither-ordered" {
         process_frames_mod(
             &DitheringOrdered {},
-            &mut ProcessingArgs::DitheringOrdered(args[2].parse::<f32>().unwrap()),
+            &mut FrameProcessingArgs::DitheringOrdered(args[2].parse::<f32>().unwrap()),
+            None,
         )
         .unwrap();
     } else if args[1] == "posterize" {
         process_frames_mod(
             &Posterize {},
-            &mut ProcessingArgs::Posterize(args[2].parse::<u32>().unwrap()),
+            &mut FrameProcessingArgs::Posterize(args[2].parse::<u32>().unwrap()),
+            None,
         )
         .unwrap()
+    } else if args[1] == "psychodelize" {
+        process_frames_mod(
+            &Psychodelize {},
+            &mut FrameProcessingArgs::Psychodelize((
+                args[2].parse::<f32>().unwrap(),
+                args[3].parse::<f32>().unwrap(),
+                args[4].parse::<f32>().unwrap(),
+            )),
+            Some(&VideoProcessingArgs::Psychodelize((
+                args[5].parse::<f32>().unwrap(),
+                args[6].parse::<f32>().unwrap(),
+                args[7].parse::<f32>().unwrap(),
+            ))),
+        )
+        .unwrap();
     } else if args[1] == "quadrate" {
         process_frames_new(
             &Quadrate {},
-            &mut ProcessingArgs::Quadrate(args[2].parse::<f32>().unwrap()),
+            &mut FrameProcessingArgs::Quadrate(args[2].parse::<f32>().unwrap()),
+            None,
         )
         .unwrap();
     } else if args[1] == "downscale" {
         process_frames_new(
             &Downscale {},
-            &mut ProcessingArgs::Downscale(args[2].parse::<u32>().unwrap()),
+            &mut FrameProcessingArgs::Downscale(args[2].parse::<u32>().unwrap()),
+            None,
         )
         .unwrap();
     } else if args[1] == "upscale" {
         process_frames_new(
             &Upscale {},
-            &mut ProcessingArgs::Upscale(args[2].parse::<u32>().unwrap()),
-        )
-        .unwrap();
-    } else if args[1] == "psychodelize" {
-        process_frames_new(
-            &Psychodelize {},
-            &mut ProcessingArgs::Psychodelize((
-                args[2].parse::<f32>().unwrap(),
-                args[3].parse::<f32>().unwrap(),
-                args[4].parse::<f32>().unwrap(),
-            )),
+            &mut FrameProcessingArgs::Upscale(args[2].parse::<u32>().unwrap()),
+            None,
         )
         .unwrap();
     }

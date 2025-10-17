@@ -123,16 +123,16 @@ fn shift_hue(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, shift: f32) {
     }
 }
 
-fn accent_edges(image: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-    let (w, h) = image.dimensions();
-    let mut out = image.clone();
+fn accent_edges(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>) {
+    let (w, h) = img.dimensions();
+    let img_copy = img.clone();
     for y in 1..h - 1 {
         for x in 1..w - 1 {
             let gx = |dx: i32, dy: i32| {
                 let mut sum = 0i32;
                 for ky in -1..=1 {
                     for kx in -1..=1 {
-                        let v = image
+                        let v = img_copy
                             .get_pixel((x as i32 + dx + kx) as u32, (y as i32 + dy + ky) as u32)[0]
                             as i32;
                         let coeff = if kx == 1 {
@@ -149,28 +149,22 @@ fn accent_edges(image: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> ImageBuffer<Rgb<u8>, V
             };
             let magnitude = ((gx(0, 0).abs() + gx(0, 0).abs()) / 2) as u8;
             if magnitude > 100 {
-                out.put_pixel(x, y, Rgb([255, 255, 255]));
+                img.put_pixel(x, y, Rgb([255, 255, 255]));
             }
         }
     }
-    out
 }
 
-fn wave_distort(
-    img: ImageBuffer<Rgb<u8>, Vec<u8>>,
-    amplitude: f32,
-    frequency: f32,
-) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+fn wave_distort(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, amplitude: f32, frequency: f32) {
     let (w, h) = img.dimensions();
-    let mut out = img.clone();
+    let img_copy = img.clone();
     for y in 0..h {
         for x in 0..w {
             let offset_x = ((amplitude * ((y as f32 * frequency).sin())) as i32).max(0);
             let src_x = ((x as i32 + offset_x) % w as i32).unsigned_abs();
-            out.put_pixel(x, y, *img.get_pixel(src_x, y));
+            img.put_pixel(x, y, *img_copy.get_pixel(src_x, y));
         }
     }
-    out
 }
 
 pub fn get_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette_size: usize) {
@@ -229,7 +223,7 @@ pub struct Downscale {}
 pub struct Upscale {}
 pub struct Psychodelize {}
 
-pub enum ProcessingArgs {
+pub enum FrameProcessingArgs {
     DitheringOrdered(f32),
     Posterize(u32),
     Quadrate(f32),
@@ -238,51 +232,65 @@ pub enum ProcessingArgs {
     Psychodelize((f32, f32, f32)),
 }
 
-impl ProcessingArgs {
+impl FrameProcessingArgs {
     fn get_dithering_ordered_args(&self) -> Option<f32> {
-        if let ProcessingArgs::DitheringOrdered(k) = self {
+        if let FrameProcessingArgs::DitheringOrdered(k) = self {
             Some(*k)
         } else {
             None
         }
     }
     fn get_posterize_args(&self) -> Option<u32> {
-        if let ProcessingArgs::Posterize(amount) = self {
+        if let FrameProcessingArgs::Posterize(amount) = self {
             Some(*amount)
         } else {
             None
         }
     }
     fn get_quadrate_args(&self) -> Option<f32> {
-        if let ProcessingArgs::Quadrate(k) = self {
+        if let FrameProcessingArgs::Quadrate(k) = self {
             Some(*k)
         } else {
             None
         }
     }
     fn get_downscale_args(&self) -> Option<u32> {
-        if let ProcessingArgs::Downscale(size) = self {
+        if let FrameProcessingArgs::Downscale(size) = self {
             Some(*size)
         } else {
             None
         }
     }
     fn get_upscale_args(&self) -> Option<u32> {
-        if let ProcessingArgs::Upscale(size) = self {
+        if let FrameProcessingArgs::Upscale(size) = self {
             Some(*size)
         } else {
             None
         }
     }
     fn get_psychodelize_args(&self) -> Option<(f32, f32, f32)> {
-        if let ProcessingArgs::Psychodelize((shift, attitude, frequency)) = self {
+        if let FrameProcessingArgs::Psychodelize((shift, attitude, frequency)) = self {
             Some((*shift, *attitude, *frequency))
         } else {
             None
         }
     }
     fn set_psychodelize_args(&mut self, args: (f32, f32, f32)) {
-        *self = ProcessingArgs::Psychodelize(args);
+        *self = FrameProcessingArgs::Psychodelize(args);
+    }
+}
+
+pub enum VideoProcessingArgs {
+    Psychodelize((f32, f32, f32)),
+}
+
+impl VideoProcessingArgs {
+    fn get_psychodelize_args(&self) -> Option<(f32, f32, f32)> {
+        if let VideoProcessingArgs::Psychodelize((shift, attitude, frequency)) = self {
+            Some((*shift, *attitude, *frequency))
+        } else {
+            None
+        }
     }
 }
 
@@ -290,7 +298,8 @@ pub trait FrameModProcessing {
     fn process(
         &self,
         img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        video_args: Option<&VideoProcessingArgs>,
     ) -> Result<(), Box<dyn std::error::Error>>;
 }
 
@@ -298,7 +307,8 @@ pub trait FrameNewProcessing {
     fn process(
         &self,
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        video_args: Option<&VideoProcessingArgs>,
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn std::error::Error>>;
 }
 
@@ -306,7 +316,8 @@ impl FrameModProcessing for DitheringOrdered {
     fn process(
         &self,
         img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        _video_args: Option<&VideoProcessingArgs>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let r = args.get_dithering_ordered_args().unwrap();
         let file = File::open("./palette.txt")
@@ -358,7 +369,8 @@ impl FrameModProcessing for Posterize {
     fn process(
         &self,
         img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        _video_args: Option<&VideoProcessingArgs>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         for (_x, _y, pixel) in img.enumerate_pixels_mut() {
             let step = 255 / args.get_posterize_args().unwrap();
@@ -371,11 +383,35 @@ impl FrameModProcessing for Posterize {
     }
 }
 
+impl FrameModProcessing for Psychodelize {
+    fn process(
+        &self,
+        img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>,
+        args: &mut FrameProcessingArgs,
+        video_args: Option<&VideoProcessingArgs>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (shift_speed, amplitude_speed, frequency_speed) =
+            video_args.unwrap().get_psychodelize_args().unwrap();
+        let (shift, amplitude, frequency) = args.get_psychodelize_args().unwrap();
+        shift_hue(img, shift);
+        wave_distort(img, amplitude, frequency);
+        accent_edges(img);
+
+        args.set_psychodelize_args((
+            shift + shift_speed,
+            (amplitude + amplitude_speed) % 50.0,
+            (frequency + frequency_speed) % 1.0,
+        ));
+        Ok(())
+    }
+}
+
 impl FrameNewProcessing for Quadrate {
     fn process(
         &self,
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        _video_args: Option<&VideoProcessingArgs>,
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
         let k = args.get_quadrate_args().unwrap();
         let (width, height) = img.dimensions();
@@ -396,7 +432,8 @@ impl FrameNewProcessing for Downscale {
     fn process(
         &self,
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        _video_args: Option<&VideoProcessingArgs>,
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
         let k = args.get_downscale_args().unwrap();
         let (width, height) = img.dimensions();
@@ -423,7 +460,8 @@ impl FrameNewProcessing for Upscale {
     fn process(
         &self,
         img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
+        args: &mut FrameProcessingArgs,
+        _video_args: Option<&VideoProcessingArgs>,
     ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
         let k = args.get_upscale_args().unwrap();
         let (width, height) = img.dimensions();
@@ -439,28 +477,10 @@ impl FrameNewProcessing for Upscale {
     }
 }
 
-impl FrameNewProcessing for Psychodelize {
-    fn process(
-        &self,
-        img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-        args: &mut ProcessingArgs,
-    ) -> Result<ImageBuffer<Rgb<u8>, Vec<u8>>, Box<dyn std::error::Error>> {
-        let (shift, amplitude, frequency) = args.get_psychodelize_args().unwrap();
-        let mut output_img = img.clone();
-
-        if shift != 0.0 {
-            shift_hue(&mut output_img, shift);
-        }
-        output_img = wave_distort(output_img.clone(), amplitude, frequency);
-        //args.set_psychodelize_args((shift + 10.0, (amplitude + 1.0) % 50.0, (frequency + 0.05) % 1.0));
-
-        Ok(accent_edges(&output_img))
-    }
-}
-
 pub fn process_frames_mod<T: FrameModProcessing>(
     mod_processing: &T,
-    args: &mut ProcessingArgs,
+    args: &mut FrameProcessingArgs,
+    video_args: Option<&VideoProcessingArgs>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut frame_paths: Vec<PathBuf> = std::fs::read_dir("./frames")?
         .filter_map(|entry| {
@@ -498,7 +518,7 @@ pub fn process_frames_mod<T: FrameModProcessing>(
             panic!("Frame size mismatch at {:?}", path);
         }
         progress_bar.step();
-        mod_processing.process(&mut img, args)?;
+        mod_processing.process(&mut img, args, video_args)?;
         img.save(path.to_str().unwrap()).unwrap();
     }
 
@@ -507,7 +527,8 @@ pub fn process_frames_mod<T: FrameModProcessing>(
 
 pub fn process_frames_new<T: FrameNewProcessing>(
     new_processing: &T,
-    args: &mut ProcessingArgs,
+    args: &mut FrameProcessingArgs,
+    video_args: Option<&VideoProcessingArgs>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut frame_paths: Vec<PathBuf> = std::fs::read_dir("./frames")?
         .filter_map(|entry| {
@@ -545,7 +566,7 @@ pub fn process_frames_new<T: FrameNewProcessing>(
             panic!("Frame size mismatch at {:?}", path);
         }
         progress_bar.step();
-        let new_img = new_processing.process(&img, args)?;
+        let new_img = new_processing.process(&img, args, video_args)?;
         new_img.save(path.to_str().unwrap()).unwrap();
     }
 
